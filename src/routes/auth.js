@@ -17,7 +17,7 @@ const registerSchema = Joi.object({
     'string.empty': 'El nombre es obligatorio',
     'string.min': 'El nombre debe tener al menos 3 caracteres',
   }),
-  email: Joi.string().email().required().messages({
+  email: Joi.string().trim().email().required().messages({ 
     'string.email': 'Debe ingresar un correo válido',
     'any.required': 'El correo es obligatorio'
   }),
@@ -28,7 +28,7 @@ const registerSchema = Joi.object({
 });
 
 const loginSchema = Joi.object({
-  email: Joi.string().email().required().messages({
+  email: Joi.string().trim().email().required().messages({ 
     'string.email': 'Debe ingresar un correo válido',
     'any.required': 'El correo es obligatorio'
   }),
@@ -43,6 +43,11 @@ const loginSchema = Joi.object({
    ========================================================= */
 router.post('/register', async (req, res) => {
   try {
+    // Forzamos el trim para el registro
+    if (req.body.email) {
+      req.body.email = req.body.email.trim();
+    }
+
     // Validación con Joi
     const { error } = registerSchema.validate(req.body);
     if (error)
@@ -70,7 +75,7 @@ router.post('/register', async (req, res) => {
     );
 
     res.status(201).json({
-      user: { id: user._id, name: user.name, email: user.email, role: user.role },
+      user: { id: user._id, name: user.name, email: user.email, role: user.email },
       token
     });
   } catch (err) {
@@ -84,12 +89,25 @@ router.post('/register', async (req, res) => {
    ========================================================= */
 router.post('/login', async (req, res) => {
   try {
-    // Validación con Joi
+    
+    // --- INICIO DE LA MODIFICACIÓN ---
+    // ¡¡VAMOS A COMENTAR LA VALIDACIÓN PARA DIAGNOSTICAR!!
+    
+    /*
+    if (req.body.email) {
+      req.body.email = req.body.email.trim();
+    }
+    
     const { error } = loginSchema.validate(req.body);
     if (error)
       return res.status(400).json({ message: error.details[0].message });
+    */
 
-    const { email, password } = req.body;
+    // Asignamos las variables manualmente (y forzamos el trim aquí)
+    const email = req.body.email ? req.body.email.trim() : '';
+    const password = req.body.password;
+    // --- FIN DE LA MODIFICACIÓN ---
+
 
     // Verificar usuario
     const user = await User.findOne({ email });

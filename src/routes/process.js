@@ -59,7 +59,15 @@ router.post('/', authMiddleware, checkRole(['admin', 'supervisor']), async (req,
 
     await newProcess.save();
     
-    // TODO: Emitir evento de socket (ej. 'proceso_asignado') al 'revisor' (revisor._id)
+    // Emitir evento de socket al 'revisor' (revisor._id)
+    const io = req.app.get('io');
+    const notificationPayload = {
+        id: newProcess._id,
+        title: newProcess.title,
+        message: `Te han asignado un nuevo proceso: "${newProcess.title}"`
+    };
+    // Enviamos la notificación a la sala personal del revisor
+    io.to(revisor._id.toString()).emit('process:assigned', notificationPayload);
 
     res.status(201).json(newProcess);
   } catch (err) {
@@ -78,10 +86,18 @@ router.get('/', authMiddleware, async (req, res) => {
 
     if (role === 'revisor') {
       // El revisor ve solo los procesos que se le asignaron
-      processes = await Process.find({ assignedTo: id }).populate('createdBy', 'name email').sort({ createdAt: -1 });
+      // --- INICIO DE LA CORRECCIÓN 1 ---
+      processes = await Process.find({ assignedTo: id })
+        .populate({ path: 'createdBy', select: 'name email' }) // <-- Sintaxis moderna
+        .sort({ createdAt: -1 });
+      // --- FIN DE LA CORRECCIÓN 1 ---
     } else {
       // Admin y Supervisor ven los procesos que ellos crearon
-      processes = await Process.find({ createdBy: id }).populate('assignedTo', 'name email').sort({ createdAt: -1 });
+      // --- INICIO DE LA CORRECCIÓN 2 ---
+      processes = await Process.find({ createdBy: id })
+        .populate({ path: 'assignedTo', select: 'name email' }) // <-- Sintaxis moderna
+        .sort({ createdAt: -1 });
+      // --- FIN DE LA CORRECCIÓN 2 ---
     }
     
     res.json(processes);
@@ -126,7 +142,16 @@ router.post('/:id/incidents', authMiddleware, checkRole(['revisor']), async (req
     }
     
     // ¡IMPORTANTE! Notificación en tiempo real
-    // TODO: Emitir evento de socket (ej. 'incidencia_critica') al supervisor (process.createdBy)
+    const io = req.app.get('io');
+    const notificationPayload = {
+        id: newIncident._id,
+        processId: process._id,
+        processTitle: process.title,
+        message: `${req.user.name} reportó una incidencia ${severity} en "${process.title}"`,
+        severity: severity
+    };
+    // Enviar al supervisor/creador del proceso
+    io.to(process.createdBy.toString()).emit('incident:created', notificationPayload);
 
     res.status(201).json(newIncident);
   } catch (err) {
@@ -157,7 +182,16 @@ router.put('/:id/status', authMiddleware, checkRole(['supervisor', 'admin']), as
         process.history.push({ user: req.user.id, action: `Proceso ${status}` });
         await process.save();
         
-        // TODO: Emitir evento de socket (ej. 'proceso_aprobado') al revisor (process.assignedTo)
+        // Emitir evento de socket (ej. 'proceso_aprobado') al revisor (process.assignedTo)
+        const io = req.app.get('io');
+        const notificationPayload = {
+            id: process._id,
+            title: process.title,
+            status: process.status,
+            message: `El proceso "${process.title}" ha sido ${status}`
+        };
+        // Enviar al revisor asignado
+        io.to(process.assignedTo.toString()).emit('process:status_updated', notificationPayload);
 
         res.json(process);
     } catch (err) {
