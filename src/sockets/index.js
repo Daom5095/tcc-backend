@@ -21,6 +21,13 @@ async function initSockets(io) {
     const user = socket.user;
     console.log('Socket conectado:', socket.id, 'user:', user.email);
 
+  
+    // Unir al usuario a una sala privada con su propio ID
+    // Esto nos permite enviarle notificaciones directas (ej. io.to(user.id).emit(...))
+    socket.join(user.id); 
+    console.log(`Usuario ${user.name} unido a su sala personal: ${user.id}`);
+   
+
     // Unirse a la sala pública 'general'
     const PUBLIC_ROOM = 'general';
     socket.join(PUBLIC_ROOM);
@@ -36,7 +43,7 @@ async function initSockets(io) {
     const recent = await Message.find({ conversationId: publicConv._id }).sort({ createdAt: -1 }).limit(50).lean();
     socket.emit('recent_messages', recent.reverse());
 
-    // recibir nuevo mensaje desde cliente
+    // recibir nuevo mensaje PÚBLICO desde cliente
     socket.on('new_message', async (payload) => {
       // payload: { content }
       try {
@@ -50,32 +57,6 @@ async function initSockets(io) {
           content: content.trim(),
         });
         await message.save();
-
-        // Unirse a una sala privada
-socket.on('join_room', (roomId) => {
-  socket.join(roomId);
-  console.log(`${user.name} se unió a la sala ${roomId}`);
-});
-
-// Enviar mensaje a sala específica
-socket.on('room_message', async (payload) => {
-  const { roomId, content } = payload;
-  if (!roomId || !content) return;
-
-  const message = new Message({
-    conversationId: roomId,
-    senderId: user.id,
-    senderName: user.name,
-    content: content.trim(),
-  });
-  await message.save();
-
-  io.to(roomId).emit('message_saved', {
-    senderName: user.name,
-    content: content.trim(),
-    createdAt: message.createdAt,
-  });
-});
 
         // actualizar lastMessageAt en conversation
         publicConv.lastMessageAt = message.createdAt;
@@ -95,6 +76,36 @@ socket.on('room_message', async (payload) => {
       } catch (err) {
         console.error('Error al guardar mensaje:', err);
       }
+    });
+
+    // Unirse a una sala privada
+    socket.on('join_room', (roomId) => {
+      socket.join(roomId);
+      console.log(`${user.name} se unió a la sala ${roomId}`);
+    });
+
+    // Enviar mensaje a sala específica
+    socket.on('room_message', async (payload) => {
+      const { roomId, content } = payload;
+      if (!roomId || !content) return;
+
+      // Aquí asumimos que 'roomId' es un ID de Conversación válida
+      const message = new Message({
+        conversationId: roomId,
+        senderId: user.id,
+        senderName: user.name,
+        content: content.trim(),
+      });
+      await message.save();
+
+      io.to(roomId).emit('message_saved', {
+        id: message._id,
+        conversationId: roomId,
+        senderId: message.senderId,
+        senderName: user.name,
+        content: content.trim(),
+        createdAt: message.createdAt,
+      });
     });
 
     socket.on('disconnect', () => {

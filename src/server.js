@@ -1,4 +1,3 @@
-
 require('dotenv').config();
 const http = require('http');
 const { Server } = require('socket.io');
@@ -18,9 +17,13 @@ const io = new Server(server, {
   }
 });
 
-initSockets(io);
 
-// Evento básico socket
+// Hacemos que 'io' sea accesible globalmente en la app de Express
+app.set('io', io); 
+
+
+initSockets(io); 
+
 io.on('connection', (socket) => {
   console.log('Cliente conectado:', socket.id);
   socket.on('disconnect', () => {
