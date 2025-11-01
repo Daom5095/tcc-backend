@@ -1,20 +1,27 @@
 /**
- * Middleware para verificar roles de usuario.
- * @param {Array<String>} allowedRoles - Array de roles permitidos (ej. ['admin', 'supervisor'])
+ * Middleware para verificar roles de usuario (checkRole.js).
+ * Es un "Factory Function": una función que devuelve el middleware real.
+ * * @param {Array<String>} allowedRoles - Array de roles permitidos (ej. ['admin', 'supervisor'])
  */
 const checkRole = (allowedRoles) => {
+  
+  // Esta es la función de middleware que Express usará
   return (req, res, next) => {
-    // Se asume que el middleware 'auth' ya se ejecutó
-    // y pobló req.user con el payload del JWT
+    
+    // Asumo que el middleware 'auth.js' ya se ejecutó
+    // y pobló req.user
     if (!req.user || !req.user.role) {
-      return res.status(401).json({ message: 'No autorizado' });
+      // Este error no debería pasar si 'auth' se usó primero, pero es una defensa
+      return res.status(401).json({ message: 'No autorizado (Usuario no verificado)' });
     }
 
     const { role } = req.user;
 
+    // Compruebo si el rol del usuario está en la lista de roles permitidos
     if (allowedRoles.includes(role)) {
       next(); // El rol está permitido, continuar
     } else {
+      // El rol no está permitido, devuelvo 403 Forbidden
       return res.status(403).json({ message: 'Acceso denegado: Rol no autorizado' });
     }
   };
