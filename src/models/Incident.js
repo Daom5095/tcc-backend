@@ -32,12 +32,17 @@ const incidentSchema = new Schema({
     // 'texto', 'imagen' (guardo URL), 'enlace' (guardo URL)
     type: { 
       type: String, 
-      enum: ['texto', 'imagen', 'enlace'], 
+      // --- MODIFICACIÓN AQUÍ ---
+      enum: ['texto', 'imagen', 'enlace', 'archivo'], // <-- Añadido 'archivo'
       default: 'texto' 
     },
     content: { 
       type: String, 
       required: true 
+    },
+    // --- NUEVO CAMPO ---
+    url: { // <-- Añadido para guardar la ruta del archivo
+      type: String 
     }
   }],
   

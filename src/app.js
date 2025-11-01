@@ -12,9 +12,11 @@ const statsRoutes = require('./routes/stats'); // Mis rutas de estadísticas
 const processRoutes = require('./routes/process'); // Mis rutas de procesos (core)
 const conversationRoutes = require('./routes/conversations'); // Mis rutas de chats
 const reportRoutes = require('./routes/reports'); // Mis rutas de reportes
+const path = require('path');
 
 // --- ¡NUEVA RUTA! ---
 const userRoutes = require('./routes/users'); // Mis rutas de usuarios (contactos)
+const notificationRoutes = require('./routes/notificationRoutes'); // <-- NUEVO
 
 const app = express();
 
@@ -25,6 +27,9 @@ app.use(cors());
 app.use(helmet()); 
 app.use(morgan('dev'));
 
+// Servir archivos estáticos
+app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
+
 
 // --- DEFINICIÓN DE RUTAS DE LA API ---
 app.use('/auth', authRoutes);
@@ -32,9 +37,8 @@ app.use('/stats', statsRoutes);
 app.use('/api/processes', processRoutes);
 app.use('/api/conversations', conversationRoutes);
 app.use('/api/reports', reportRoutes);
-
-// --- ¡CONECTO LA NUEVA RUTA! ---
 app.use('/api/users', userRoutes);
+app.use('/api/notifications', notificationRoutes); // <-- NUEVO
 
 
 // --- RUTAS DE SALUD Y MANEJO DE ERRORES ---
