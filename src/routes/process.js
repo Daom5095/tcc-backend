@@ -14,10 +14,11 @@ const authMiddleware = require('../middlewares/auth');
 const checkRole = require('../middlewares/checkRole');
 
 // Modelos
+const Notification = require('../models/Notification');
 const Process = require('../models/Process');
 const Incident = require('../models/Incident');
 const User = require('../models/User');
-const Notification = require('../models/Notification');
+
 
 /* =========================================================
    🧩 VALIDACIONES DE DATOS CON JOI
