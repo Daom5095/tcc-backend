@@ -1,6 +1,7 @@
 /*
  * Módulo de Sockets (sockets/index.js).
  * --- ¡MODIFICADO CON "IS TYPING" (FASE 2 - PASO 2)! ---
+ * --- ¡MODIFICADO CON NOTIFICACIONES INTELIGENTES (MEJORA)! ---
  */
 const Conversation = require('../models/Conversation');
 const Message = require('../models/Message');
@@ -123,7 +124,7 @@ async function initSockets(io) {
       console.log(`${user.name} se unió a la sala ${roomId}`);
     });
 
-    // (Enviar mensaje privado - sin cambios)
+    // --- ¡MEJORA! (Enviar mensaje privado - MODIFICADO) ---
     socket.on('chat:send_private', async (payload) => {
       try {
         const { roomId, content } = payload;
@@ -153,20 +154,38 @@ async function initSockets(io) {
           createdAt: message.createdAt,
         };
 
+        // 1. Enviar el mensaje a todos en la sala (incluido el emisor)
         io.to(roomId).emit('chat:receive_private', msgToEmit);
 
-        const messageForNotif = `Nuevo mensaje de ${user.name}: "${content.substring(0, 30)}..."`;
         
+        // 2. Lógica de Notificación Inteligente
         conv.participants.forEach(async (participantId) => {
+          // Solo proceso a los receptores (no a mí mismo)
           if (participantId.toString() !== user.id) {
-            const newNotification = new Notification({
-              user: participantId,
-              message: messageForNotif,
-              link: `/chat/${roomId}`,
-              type: 'chat'
-            });
-            await newNotification.save();
-            io.to(participantId.toString()).emit('chat:new_message_notification', newNotification);
+            
+            // 2.1. Obtengo todos los sockets activos del receptor
+            // (Un usuario puede estar conectado desde el móvil y el PC)
+            const recipientSockets = await io.in(participantId.toString()).fetchSockets();
+
+            // 2.2. Compruebo si ALGUNO de sus sockets está en la sala de chat actual
+            const isRecipientInRoom = recipientSockets.some(sock => sock.rooms.has(roomId));
+
+            // 2.3. Si el receptor NO está en la sala (no tiene este chat abierto),
+            // le envío la notificación "push".
+            if (!isRecipientInRoom) {
+              const messageForNotif = `Nuevo mensaje de ${user.name}: "${content.substring(0, 30)}..."`;
+              
+              const newNotification = new Notification({
+                user: participantId,
+                message: messageForNotif,
+                link: `/chat/${roomId}`,
+                type: 'chat'
+              });
+              await newNotification.save();
+              
+              // 2.4. Emito la notificación solo a la sala *personal* del receptor
+              io.to(participantId.toString()).emit('chat:new_message_notification', newNotification);
+            }
           }
         });
 
@@ -174,6 +193,8 @@ async function initSockets(io) {
         console.error('Error en chat:send_private:', err);
       }
     });
+    // --- Fin de la Mejora ---
+
 
     // --- NUEVO: Lógica de "Escribiendo" para Chat Privado ---
     socket.on('chat:start_typing_private', ({ roomId }) => {

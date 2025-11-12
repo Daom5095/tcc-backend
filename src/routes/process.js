@@ -1,6 +1,7 @@
 /*
  * Rutas de Procesos (/api/processes).
  * --- ¡MODIFICADO PARA GUARDAR NOTIFICACIONES (FASE 2 - PASO 1)! ---
+ * --- ¡MODIFICADO CON VALIDACIÓN DE ARCHIVOS (MEJORA)! ---
  */
 const express = require('express');
 const Joi = require('joi');
@@ -43,7 +44,28 @@ const storage = multer.diskStorage({
   }
 });
 
-const upload = multer({ storage: storage });
+// --- ¡NUEVA MEJORA! Filtro de archivos ---
+const fileFilter = (req, file, cb) => {
+  // Definir mimetypes permitidos
+  const allowedTypes = ['image/jpeg', 'image/png', 'application/pdf'];
+  if (allowedTypes.includes(file.mimetype)) {
+    cb(null, true); // Aceptar archivo
+  } else {
+    // Rechazar archivo con un error específico
+    cb(new Error('Tipo de archivo no permitido. Solo se aceptan JPEG, PNG o PDF.'), false);
+  }
+};
+// --- Fin de Filtro ---
+
+// --- ¡CONFIGURACIÓN DE MULTER MODIFICADA! ---
+const upload = multer({ 
+  storage: storage,
+  limits: {
+    fileSize: 1024 * 1024 * 5 // Límite de 5MB por archivo
+  },
+  fileFilter: fileFilter
+}).array('evidenceFiles', 5); // Acepta hasta 5 archivos
+
 
 /* =========================================================
    🔑 (ADMIN/SUPERVISOR) Crear nuevo proceso
@@ -232,15 +254,35 @@ router.get('/:id/incidents', authMiddleware, async (req, res) => {
 });
 
 
+// --- ¡NUEVA MEJORA! Middleware para manejar errores de Multer ---
+const handleUpload = (req, res, next) => {
+  upload(req, res, (err) => {
+    if (err instanceof multer.MulterError) {
+      // Error de Multer (ej. tamaño de archivo)
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({ message: 'Error: El archivo es demasiado grande (Máx. 5MB).' });
+      }
+      return res.status(400).json({ message: `Error de Multer: ${err.message}` });
+    } else if (err) {
+      // Otro error (ej. tipo de archivo no permitido del fileFilter)
+      return res.status(400).json({ message: err.message });
+    }
+    // Si todo está bien, pasa al siguiente handler
+    next();
+  });
+};
+// --- Fin de la mejora ---
+
+
 /* =========================================================
    (REVISOR) Reportar una incidencia para un proceso
    POST /api/processes/:id/incidents
    ========================================================= */
-// --- RUTA MODIFICADA (Guarda Notificación) ---
+// --- RUTA MODIFICADA (Usa el nuevo handleUpload) ---
 router.post(
   '/:id/incidents', 
   authMiddleware, 
-  upload.array('evidenceFiles', 5), 
+  handleUpload, // <-- Usamos el nuevo handler que atrapa errores
   async (req, res) => {
     try {
       const { description, severity, evidenceText, evidenceLink } = req.body;
