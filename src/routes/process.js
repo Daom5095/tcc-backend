@@ -2,10 +2,7 @@
  * Rutas de Procesos (/api/processes).
  * --- ¡MODIFICADO PARA GUARDAR NOTIFICACIONES (FASE 2 - PASO 1)! ---
  * --- ¡MODIFICADO CON VALIDACIÓN DE ARCHIVOS (MEJORA)! ---
- *
- * Este es el archivo de rutas MÁS IMPORTANTE.
- * Maneja el CRUD (Crear, Leer, Actualizar) de los Procesos y
- * la creación de Incidencias (que incluye la subida de archivos).
+ * --- ¡CORREGIDO: Creación automática de la carpeta 'uploads' (BUG FIX)! ---
  */
 const express = require('express');
 const Joi = require('joi');
@@ -13,6 +10,7 @@ const router = express.Router();
 const mongoose = require('mongoose');
 const multer = require('multer'); // Para manejar la subida de archivos (form-data)
 const path = require('path');
+const fs = require('fs'); // <-- ¡NUEVA IMPORTACIÓN!
 
 // --- Middlewares ---
 const authMiddleware = require('../middlewares/auth'); // Siempre primero
@@ -42,12 +40,17 @@ const createProcessSchema = Joi.object({
    💾 CONFIGURACIÓN DE MULTER (Subida de Archivos)
    ========================================================= */
 
+// --- ¡INICIO DE LA CORRECCIÓN! ---
+// Defino la ruta de 'uploads' en una variable
+const uploadsDir = path.join(__dirname, '..', '..', 'uploads');
+
 // 1. Configuración de Almacenamiento (DiskStorage)
 const storage = multer.diskStorage({
   // 'destination': dónde se guardan los archivos
   destination: function (req, file, cb) {
-    // Los guardo en una carpeta 'uploads' en la raíz del backend
-    cb(null, path.join(__dirname, '..', '..', 'uploads'));
+    // AÑADIDO: Verifico si la carpeta existe, si no, la creo
+    fs.mkdirSync(uploadsDir, { recursive: true });
+    cb(null, uploadsDir);
   },
   // 'filename': qué nombre tendrá el archivo en el servidor
   filename: function (req, file, cb) {
@@ -57,6 +60,8 @@ const storage = multer.diskStorage({
     cb(null, uniqueSuffix + '-' + file.originalname);
   }
 });
+// --- FIN DE LA CORRECCIÓN ---
+
 
 // 2. Filtro de Archivos (Mejora de seguridad)
 const fileFilter = (req, file, cb) => {
@@ -169,10 +174,11 @@ router.get('/', authMiddleware, async (req, res) => {
     if (role === 'revisor') {
       // Un revisor SOLO ve procesos asignados a él
       query.assignedTo = id;
-    } else {
+    } else if (role === 'supervisor') {
       // Un admin/supervisor SOLO ve procesos creados por él
       query.createdBy = id;
     }
+    // Si es 'admin', la query se queda vacía {} y ve todo
     
     // 2. Añado filtros si existen
     if (status && status !== 'todos') {
@@ -239,9 +245,11 @@ router.get('/:id', authMiddleware, async (req, res) => {
     if (role === 'revisor' && !isAssignedTo) {
       return res.status(403).json({ message: 'Acceso denegado: No eres el revisor' });
     }
-    if (role !== 'revisor' && !isCreatedBy) {
-       // Si no soy revisor (admin/supervisor) y no lo cree yo
-       return res.status(403).json({ message: 'Acceso denegado: No eres el creador' });
+    // REGLA MEJORADA: Un 'admin' puede ver todo.
+    // Un 'supervisor' solo puede ver los que él creó.
+    if (role === 'supervisor' && !isCreatedBy) {
+       // Si soy supervisor y no lo cree yo
+       return res.status(403).json({ message: 'Acceso denegado: No eres el creador de este proceso' });
     }
 
     // 3. Si paso los permisos, devuelvo el proceso
@@ -277,7 +285,8 @@ router.get('/:id/incidents', authMiddleware, async (req, res) => {
     if (role === 'revisor' && !isAssignedTo) {
       return res.status(403).json({ message: 'Acceso denegado' });
     }
-    if (role !== 'revisor' && !isCreatedBy) {
+    // REGLA MEJORADA: Un 'admin' puede ver todo.
+    if (role === 'supervisor' && !isCreatedBy) {
        return res.status(403).json({ message: 'Acceso denegado' });
     }
     
@@ -307,7 +316,7 @@ const handleUpload = (req, res, next) => {
       }
       return res.status(400).json({ message: `Error de Multer: ${err.message}` });
     } else if (err) {
-      // Otro error (ej. tipo de archivo no permitido del fileFilter)
+      // Otro error (ej. tipo de archivo no permitido del fileFilter O el ENOENT)
       return res.status(400).json({ message: err.message });
     }
     // Si todo está bien, pasa al siguiente handler (la lógica de la ruta)
@@ -426,7 +435,9 @@ router.post(
       res.status(201).json(populatedIncident);
     } catch (err) {
       console.error('Error en POST /api/processes/:id/incidents:', err);
-      res.status(500).json({ message: 'Error interno del servidor' });
+      // ¡Aquí estaba el error! El 'err.message' es el ENOENT.
+      // Lo cambiamos por un mensaje genérico para que el 'errorHandler' no lo tome
+      res.status(500).json({ message: 'Error interno del servidor al guardar la incidencia' });
     }
   }
 );
@@ -449,7 +460,18 @@ router.put('/:id/status', authMiddleware, checkRole(['supervisor', 'admin']), as
         // 2. Busco el proceso Y me aseguro que yo sea el creador
         const process = await Process.findOne({ _id: processId, createdBy: req.user.id });
         if (!process) {
-            return res.status(404).json({ message: 'Proceso no encontrado o usted no es el creador' });
+            // Si no lo encontré, reviso si soy admin (los admin pueden aprobar/rechazar todo)
+            if (req.user.role === 'admin') {
+              const adminProcess = await Process.findById(processId);
+              if (!adminProcess) {
+                return res.status(404).json({ message: 'Proceso no encontrado' });
+              }
+              // Si soy admin y existe, lo uso
+              process = adminProcess;
+            } else {
+              // Si soy supervisor y no es mío, bloqueo
+              return res.status(404).json({ message: 'Proceso no encontrado o usted no es el creador' });
+            }
         }
         
         // 3. Actualizo el estado y el historial
