@@ -1,39 +1,46 @@
 /*
  * Modelo de datos para el Mensaje (Message).
  * Representa un único mensaje enviado en una 'Conversación'.
+ * Define la estructura de la colección 'messages'.
  */
 const mongoose = require('mongoose');
 const { Schema } = mongoose;
 
-// Un sub-esquema para adjuntos (si decido implementarlo)
+// (Definí este sub-esquema pero al final no lo usé,
+// preferí manejar adjuntos en las 'Incidencias' y no en el chat)
 const attachmentSchema = new Schema({
   url: String, // URL del archivo
   type: String, // 'imagen', 'pdf', etc.
 }, { _id: false }); // No creo un _id para el sub-documento
 
 const messageSchema = new Schema({
-  // A qué conversación pertenece
+  // A qué conversación pertenece (Relación con 'Conversation')
   conversationId: { 
     type: Schema.Types.ObjectId, 
     ref: 'Conversation', 
     required: true 
   },
-  // Quién envió el mensaje
+  // Quién envió el mensaje (Relación con 'User')
   senderId: { 
     type: Schema.Types.ObjectId, 
     ref: 'User', 
     required: true 
   },
+  
   // Guardo el nombre del sender (denormalización)
-  // Esto evita tener que hacer 'populate' al 'senderId' solo para ver el nombre
+  // Esto evita tener que hacer 'populate' al 'senderId' CADA VEZ
+  // que cargo mensajes, mejorando mucho el rendimiento del chat.
   senderName: { 
     type: String 
   }, 
+  
   content: { 
     type: String 
   },
-  // Array de adjuntos (opcional)
+  
+  // Array de adjuntos (opcional, no implementado)
   attachments: [attachmentSchema],
 }, { timestamps: true });
 
+// Exporto el modelo 'Message'
 module.exports = mongoose.model('Message', messageSchema);

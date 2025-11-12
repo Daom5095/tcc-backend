@@ -1,20 +1,23 @@
 /*
  * Rutas de Conversaciones (/api/conversations).
- * Maneja la creación y obtención de chats privados.
+ * Maneja la creación y obtención de chats privados y el historial de mensajes.
+ * Esta API se usa para 'cargar' la vista de chat, mientras que
+ * Socket.io se usa para los mensajes 'en vivo'.
  */
 const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
-const authMiddleware = require('../middlewares/auth');
+const authMiddleware = require('../middlewares/auth'); // Protegido por auth
 const Conversation = require('../models/Conversation');
 const User = require('../models/User');
-const Message = require('../models/Message'); // <-- ¡NUEVO! Importo Mensajes
+const Message = require('../models/Message'); // Importo Mensajes
 
 /* =========================================================
    💬 INICIAR UNA NUEVA CONVERSACIÓN PRIVADA
    POST /api/conversations/
    ========================================================= */
 // Este endpoint crea una conversación privada o la devuelve si ya existe.
+// Es 'idempotente' para chats privados.
 router.post('/', authMiddleware, async (req, res) => {
   try {
     const { receiverId } = req.body; // El ID del usuario con quien quiero chatear
@@ -38,14 +41,15 @@ router.post('/', authMiddleware, async (req, res) => {
     }
 
     // 3. Buscar si YA EXISTE una conversación privada entre estos dos usuarios
-    // Uso '$all' para buscar un array que contenga AMBOS IDs, sin importar el orden.
+    // Uso '$all' para buscar un array que contenga AMBOS IDs,
+    // sin importar el orden [senderId, receiverId] o [receiverId, senderId].
     let existingConversation = await Conversation.findOne({
       type: 'private',
       participants: { $all: [senderId, receiverId] }
     });
 
     if (existingConversation) {
-      // Si ya existe, simplemente la devuelvo
+      // Si ya existe, simplemente la devuelvo (200 OK)
       return res.json(existingConversation);
     }
 
@@ -58,10 +62,10 @@ router.post('/', authMiddleware, async (req, res) => {
 
     await newConversation.save();
     
-    // (Opcional: Podría emitir un socket al 'receiverId' para notificarle)
-    // const io = req.app.get('io');
-    // io.to(receiverId).emit('new_conversation', newConversation);
-
+    // (Opcional: Podría emitir un socket al 'receiverId' para notificarle
+    //  que tiene un nuevo chat, pero la lógica de chat maneja esto)
+    
+    // Devuelvo la nueva conversación (201 Creado)
     res.status(201).json(newConversation);
 
   } catch (err) {
@@ -75,7 +79,7 @@ router.post('/', authMiddleware, async (req, res) => {
    📚 OBTENER MIS CONVERSACIONES (PRIVADAS Y PÚBLICAS)
    GET /api/conversations/
    ========================================================= */
-// Devuelve una lista de todas las conversaciones en las que participa el usuario.
+// Devuelve una lista de todas las conversaciones en las que participo.
 router.get('/', authMiddleware, async (req, res) => {
   try {
     const userId = req.user.id;
@@ -92,9 +96,10 @@ router.get('/', authMiddleware, async (req, res) => {
       path: 'participants',
       select: 'name email role' // Populo los datos de los participantes
     })
-    .sort({ lastMessageAt: -1 }); // Ordeno por el último mensaje
+    .sort({ lastMessageAt: -1 }); // Ordeno por el último mensaje (más reciente arriba)
 
-    // (El frontend tendrá que filtrar mi propio usuario de la lista de 'participants')
+    // (El frontend tendrá que filtrar mi propio usuario de la lista de 'participants'
+    // para mostrar el nombre del 'otro' usuario en un chat privado)
     
     res.json(conversations);
 
@@ -105,14 +110,12 @@ router.get('/', authMiddleware, async (req, res) => {
 });
 
 
-// ---
-// --- ¡NUEVA RUTA! ---
-// ---
 /* =========================================================
    HISTORIAL DE MENSAJES DE UN CHAT
    GET /api/conversations/:id/messages
    ========================================================= */
 // Devuelve todos los mensajes de una conversación específica.
+// (Lo usaba antes, pero ahora prefiero cargar el historial con Socket.io)
 router.get('/:id/messages', authMiddleware, async (req, res) => {
   try {
     const { id: conversationId } = req.params;

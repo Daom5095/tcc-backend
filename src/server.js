@@ -1,25 +1,33 @@
 /*
- * Este es el archivo principal que arranca todo el backend.
- * Carga la configuración, inicializa Express, Socket.io y se conecta a la BD.
+ * Este es el archivo principal que arranca todo el backend (entry point).
+ * Su responsabilidad es:
+ * 1. Cargar las variables de entorno (desde .env).
+ * 2. Conectar a la base de datos (MongoDB).
+ * 3. Crear el servidor HTTP.
+ * 4. Inicializar y vincular Socket.io al servidor HTTP.
+ * 5. Poner el servidor a escuchar en el puerto definido.
  */
-require('dotenv').config(); // Carga las variables de entorno (PORT, MONGO_URI, etc.)
+
+// 1. Carga las variables de entorno (PORT, MONGO_URI, JWT_SECRET) desde .env
+require('dotenv').config(); 
 const http = require('http');
-const { Server } = require('socket.io');
+const { Server } = require('socket.io'); // Importo el constructor de Socket.io
 const mongoose = require('mongoose');
-const app = require('./app'); // Importo la configuración de Express
+const app = require('./app'); // Importo MI aplicación Express desde app.js
 const { initSockets } = require('./sockets'); // Importo mi lógica de Sockets
 
-// Defino el puerto desde el .env o uso 4000 por defecto
+// 2. Defino el puerto desde el .env o uso 4000 por defecto
 const PORT = process.env.PORT || 4000;
 const MONGO_URI = process.env.MONGO_URI;
 
-// Creo el servidor HTTP basado en mi app de Express
+// 3. Creo el servidor HTTP basado en mi app de Express
 const server = http.createServer(app);
 
-// Inicializo Socket.io y lo conecto al servidor HTTP
-// Configuro CORS para permitir conexiones desde cualquier origen (*)
+// 4. Inicializo Socket.io y lo conecto al servidor HTTP
 const io = new Server(server, {
   cors: {
+    // Configuro CORS para Socket.io, permitiendo cualquier origen
+    // (Idealmente en producción se restringe al dominio del frontend)
     origin: '*',
     methods: ['GET', 'POST'],
     credentials: true
@@ -27,14 +35,16 @@ const io = new Server(server, {
 });
 
 
-// Hago que 'io' sea accesible globalmente en la app de Express
+// Hago que 'io' sea accesible globalmente en la app de Express.
 // Esto es CRUCIAL para poder emitir eventos desde las rutas (ej. /api/processes)
+// usando req.app.get('io')
 app.set('io', io); 
 
-// Le paso la instancia de 'io' a mi módulo de sockets para que configure los eventos
+// Le paso la instancia de 'io' a mi módulo de sockets (sockets/index.js)
+// para que configure todos los manejadores de eventos (connection, chat, etc.)
 initSockets(io); 
 
-// Configuración básica de conexión de Socket.io (solo para log)
+// (Este 'io.on' es solo un log genérico de conexión/desconexión)
 io.on('connection', (socket) => {
   console.log('Cliente conectado:', socket.id);
   socket.on('disconnect', () => {
@@ -42,14 +52,18 @@ io.on('connection', (socket) => {
   });
 });
 
-// Función asíncrona para arrancar el servidor
+/**
+ * Función asíncrona para arrancar el servidor.
+ * Usé una función 'start' para poder usar async/await y asegurar
+ * que primero conecte a la BD y LUEGO inicie el servidor.
+ */
 async function start() {
   try {
-    // 1. Conectar a MongoDB
+    // 1. Conectar a MongoDB usando la URI de mi .env
     await mongoose.connect(MONGO_URI);
     console.log('MongoDB conectado');
     
-    // 2. Si la BD conecta, pongo el servidor a escuchar
+    // 2. Si la BD conecta, pongo el servidor a escuchar peticiones
     server.listen(PORT, () => {
       console.log(`Servidor corriendo en http://localhost:${PORT}`);
     });

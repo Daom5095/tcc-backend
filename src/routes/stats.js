@@ -1,7 +1,7 @@
 /*
  * Rutas de Estadísticas (/stats).
  * Endpoints simples para obtener métricas generales del sistema.
- * Útil para un panel de administración.
+ * Útil para un panel de administración muy básico o para pruebas.
  */
 const express = require('express');
 const router = express.Router();
@@ -12,9 +12,8 @@ const auth = require('../middlewares/auth'); // Protegido por auth
 // GET /stats/
 router.get('/', auth, async (req, res) => {
   try {
-    // Cuento el total de documentos en la colección 'users'
+    // .countDocuments() es muy eficiente para solo contar
     const totalUsers = await User.countDocuments();
-    // Cuento el total de documentos en la colección 'messages'
     const totalMessages = await Message.countDocuments();
     
     // Devuelvo las estadísticas

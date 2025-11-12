@@ -1,7 +1,8 @@
 // src/routes/auth.js
 /*
  * Rutas de Autenticación (/auth).
- * Maneja el registro, inicio de sesión y verificación de perfil.
+ * Maneja el registro (register), inicio de sesión (login) y 
+ * la verificación del token del usuario (me).
  */
 const express = require('express');
 const bcrypt = require('bcrypt'); // Para hashear y comparar contraseñas
@@ -25,7 +26,8 @@ const registerSchema = Joi.object({
     'string.min': 'El nombre debe tener al menos 3 caracteres',
   }),
   
-  // Añadimos { tlds: false } para desactivar la validación de TLD (ej. '.local')
+  // Añadí { tlds: false } para desactivar la validación de TLD.
+  // Esto me permite usar emails de prueba como 'admin@tcc.local'.
   email: Joi.string().trim().email({ tlds: false }).required().messages({ 
     'string.email': 'Debe ingresar un correo válido',
     'any.required': 'El correo es obligatorio'
@@ -34,19 +36,16 @@ const registerSchema = Joi.object({
   password: Joi.string().min(6).max(128).required().messages({
     'string.min': 'La contraseña debe tener al menos 6 caracteres',
   }),
-  // Permito que se especifique un rol al registrar (quizás solo para admins)
+  // Permito que se especifique un rol al registrar (útil para crear admins/supervisores)
   role: Joi.string().valid('revisor', 'supervisor', 'admin')
 });
 
 // Esquema de validación para el login
 const loginSchema = Joi.object({
-
-  // Añadimos { tlds: false } para desactivar la validación de TLD (ej. '.local')
   email: Joi.string().trim().email({ tlds: false }).required().messages({ 
     'string.email': 'Debe ingresar un correo válido',
     'any.required': 'El correo es obligatorio'
   }),
-
   password: Joi.string().min(6).required().messages({
     'string.min': 'La contraseña debe tener al menos 6 caracteres',
     'any.required': 'La contraseña es obligatoria'
@@ -59,7 +58,7 @@ const loginSchema = Joi.object({
    ========================================================= */
 router.post('/register', async (req, res) => {
   try {
-    // Forzamos el trim para el email
+    // Forzamos el trim para el email antes de validar
     if (req.body.email) {
       req.body.email = req.body.email.trim();
     }
@@ -74,21 +73,21 @@ router.post('/register', async (req, res) => {
     // 2. Verificar si el usuario ya existe
     const existing = await User.findOne({ email });
     if (existing)
-      return res.status(409).json({ message: 'El usuario ya existe' });
+      return res.status(409).json({ message: 'El usuario ya existe' }); // 409 Conflict
 
-    // 3. Hashear la contraseña
+    // 3. Hashear la contraseña (costo 10)
     const passwordHash = await bcrypt.hash(password, 10);
 
     // 4. Crear el nuevo usuario en la BD
     const user = new User({ 
       name, 
       email, 
-      passwordHash, 
+      passwordHash, // Guardo el hash, no la contraseña
       role // Si 'role' no viene, el modelo usará 'revisor' por defecto
     });
     await user.save();
 
-    // 5. Generar un token JWT para el nuevo usuario
+    // 5. Generar un token JWT para el nuevo usuario (para auto-loguearlo)
     const token = jwt.sign(
       // Payload del token:
       { id: user._id, role: user.role, name: user.name, email: user.email },
@@ -96,14 +95,14 @@ router.post('/register', async (req, res) => {
       { expiresIn: '8h' } // El token expira en 8 horas
     );
 
-    // 6. Enviar la respuesta
+    // 6. Enviar la respuesta (201 Creado)
     res.status(201).json({
+      // Devuelvo el usuario (sin el hash) y el token
       user: { id: user._id, name: user.name, email: user.email, role: user.role },
       token
     });
   } catch (err) {
     console.error('Error en /register:', err);
-    
     res.status(500).json({ message: 'Error interno del servidor' });
   }
 });
@@ -125,9 +124,7 @@ router.post('/login', async (req, res) => {
     if (error)
       return res.status(400).json({ message: error.details[0].message });
 
-    // Asigno las variables después de validar
     const { email, password } = req.body;
-
 
     // 2. Buscar al usuario por email
     const user = await User.findOne({ email });
@@ -143,12 +140,13 @@ router.post('/login', async (req, res) => {
 
     // 4. Si todo está OK, generar el token
     const token = jwt.sign(
+      // Guardo los datos clave del usuario en el payload del token
       { id: user._id, role: user.role, name: user.name, email: user.email },
       JWT_SECRET,
-      { expiresIn: '8h' }
+      { expiresIn: '8h' } // Expiración de 8 horas
     );
 
-    // 5. Enviar respuesta
+    // 5. Enviar respuesta (200 OK)
     res.json({
       user: { id: user._id, name: user.name, email: user.email, role: user.role },
       token
@@ -166,13 +164,17 @@ router.post('/login', async (req, res) => {
 // Esta ruta está protegida. 'authMiddleware' se ejecuta primero.
 router.get('/me', authMiddleware, async (req, res) => {
   try {
-    // Gracias a 'authMiddleware', ya tengo 'req.user.id'
-    // Busco al usuario pero excluyo el passwordHash de la respuesta
+    // 1. Gracias a 'authMiddleware', ya tengo 'req.user.id' del token
+    
+    // 2. Busco al usuario en la BD para tener los datos MÁS actualizados
+    //    (ej. si cambió su nombre)
+    //    Uso .select('-passwordHash') para excluir el hash de la respuesta.
     const user = await User.findById(req.user.id).select('-passwordHash');
     
     if (!user)
       return res.status(404).json({ message: 'Usuario no encontrado' });
       
+    // 3. Devuelvo el objeto de usuario
     res.json({ user });
   } catch (err) {
     console.error('Error en /me:', err);

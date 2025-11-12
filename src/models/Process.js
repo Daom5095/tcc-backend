@@ -1,9 +1,10 @@
 /*
  * Modelo de datos para el Proceso (Process).
  * Esta es la entidad principal del proyecto. Representa una tarea de revisión.
+ * Define la estructura de la colección 'processes'.
  */
 const mongoose = require('mongoose');
-const { Schema } = mongoose;
+const { Schema } = mongoose; // Obtengo el constructor de Schema
 
 const processSchema = new Schema({
   title: { 
@@ -23,9 +24,10 @@ const processSchema = new Schema({
   },
   
   // Quién creó/supervisa este proceso (Referencia al modelo 'User')
+  // Guardo el ObjectId del usuario creador.
   createdBy: { 
     type: Schema.Types.ObjectId, 
-    ref: 'User', 
+    ref: 'User', // 'ref' le dice a Mongoose a qué modelo apunta este ID
     required: true 
   },
   
@@ -36,8 +38,9 @@ const processSchema = new Schema({
     required: true 
   },
   
-  // Historial de cambios (Requerido por el PDF para "mantener un historial")
-  // [cite: 4]
+  // Historial de cambios (Requerido para "mantener un historial")
+  // (Esta era una referencia a requisitos del proyecto)
+  // Decidí guardar un array de sub-documentos aquí mismo.
   history: [{
     user: { type: Schema.Types.ObjectId, ref: 'User' }, // Quién hizo el cambio
     action: String, // Qué hizo (ej. "Proceso Creado", "Proceso Aprobado")
@@ -47,5 +50,5 @@ const processSchema = new Schema({
   timestamps: true // Agrega createdAt y updatedAt
 });
 
-// Exporto el modelo
+// Exporto el modelo 'Process'
 module.exports = mongoose.model('Process', processSchema);
