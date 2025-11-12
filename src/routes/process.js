@@ -1,23 +1,21 @@
 /*
  * Rutas de Procesos (/api/processes).
- * --- ¡MODIFICADO PARA GUARDAR NOTIFICACIONES (FASE 2 - PASO 1)! ---
- * --- ¡MODIFICADO CON VALIDACIÓN DE ARCHIVOS (MEJORA)! ---
- * --- ¡CORREGIDO: Creación automática de la carpeta 'uploads' (BUG FIX)! ---
+ * --- ¡MODIFICADO PARA QUITAR LÍMITE DE ARCHIVOS (MEJORA)! ---
  */
 const express = require('express');
 const Joi = require('joi');
 const router = express.Router();
 const mongoose = require('mongoose');
-const multer = require('multer'); // Para manejar la subida de archivos (form-data)
+const multer = require('multer'); 
 const path = require('path');
-const fs = require('fs'); // <-- ¡NUEVA IMPORTACIÓN!
+const fs = require('fs');
 
 // --- Middlewares ---
-const authMiddleware = require('../middlewares/auth'); // Siempre primero
-const checkRole = require('../middlewares/checkRole'); // Para rutas de admin/supervisor
+const authMiddleware = require('../middlewares/auth');
+const checkRole = require('../middlewares/checkRole'); 
 
 // --- Modelos ---
-const Notification = require('../models/Notification'); // Para guardar notificaciones en BD
+const Notification = require('../models/Notification');
 const Process = require('../models/Process');
 const Incident = require('../models/Incident');
 const User = require('../models/User');
@@ -27,12 +25,11 @@ const User = require('../models/User');
    🧩 VALIDACIONES DE DATOS CON JOI
    ========================================================= */
 
-// Esquema para validar la creación de un nuevo proceso
 const createProcessSchema = Joi.object({
   title: Joi.string().min(5).max(100).required(),
-  description: Joi.string().max(1000).allow(''), // allow('') permite descripciones vacías
-  assignedToEmail: Joi.string().email({ tlds: false }).required().messages({
-     'string.email': 'Debe ingresar un correo válido para el revisor'
+  description: Joi.string().max(1000).allow(''),
+  assignedToId: Joi.string().required().messages({
+     'string.empty': 'Debe seleccionar un revisor'
   })
 });
 
@@ -40,37 +37,24 @@ const createProcessSchema = Joi.object({
    💾 CONFIGURACIÓN DE MULTER (Subida de Archivos)
    ========================================================= */
 
-// --- ¡INICIO DE LA CORRECCIÓN! ---
-// Defino la ruta de 'uploads' en una variable
 const uploadsDir = path.join(__dirname, '..', '..', 'uploads');
 
-// 1. Configuración de Almacenamiento (DiskStorage)
 const storage = multer.diskStorage({
-  // 'destination': dónde se guardan los archivos
   destination: function (req, file, cb) {
-    // AÑADIDO: Verifico si la carpeta existe, si no, la creo
     fs.mkdirSync(uploadsDir, { recursive: true });
     cb(null, uploadsDir);
   },
-  // 'filename': qué nombre tendrá el archivo en el servidor
   filename: function (req, file, cb) {
-    // Creo un nombre único para evitar colisiones:
-    // timestamp + random + nombre_original
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
     cb(null, uniqueSuffix + '-' + file.originalname);
   }
 });
-// --- FIN DE LA CORRECCIÓN ---
 
-
-// 2. Filtro de Archivos (Mejora de seguridad)
 const fileFilter = (req, file, cb) => {
-  // Defino los mimetypes (tipos de archivo) que permito
   const allowedTypes = ['image/jpeg', 'image/png', 'application/pdf'];
   if (allowedTypes.includes(file.mimetype)) {
-    cb(null, true); // Aceptar archivo
+    cb(null, true);
   } else {
-    // Rechazar archivo con un error específico
     cb(new Error('Tipo de archivo no permitido. Solo se aceptan JPEG, PNG o PDF.'), false);
   }
 };
@@ -79,67 +63,54 @@ const fileFilter = (req, file, cb) => {
 const upload = multer({ 
   storage: storage,
   limits: {
-    fileSize: 1024 * 1024 * 5 // Límite de 5MB por archivo
+    fileSize: 1024 * 1024 * 5 // Mantenemos el límite de 5MB *por archivo*
   },
-  fileFilter: fileFilter // Aplico mi filtro de tipos
-  // .array('evidenceFiles', 5) significa:
-  // - Busca archivos en un campo llamado 'evidenceFiles' en el form-data
-  // - Acepta un máximo de 5 archivos en esa petición.
-}).array('evidenceFiles', 5);
+  fileFilter: fileFilter
+  // --- ¡INICIO DE CAMBIO! ---
+  // Quitamos el número 5 de .array() para permitir archivos ilimitados
+}).array('evidenceFiles'); 
+// --- ¡FIN DE CAMBIO! ---
 
 
 /* =========================================================
    🔑 (ADMIN/SUPERVISOR) Crear nuevo proceso
    POST /api/processes/
    ========================================================= */
-// Protegido por auth y rol
 router.post('/', authMiddleware, checkRole(['admin', 'supervisor']), async (req, res) => {
   try {
-    // 1. Validar datos del body
     const { error } = createProcessSchema.validate(req.body);
     if (error) return res.status(400).json({ message: error.details[0].message });
 
-    const { title, description, assignedToEmail } = req.body;
+    const { title, description, assignedToId } = req.body;
     
-    // 2. Buscar al revisor por email
-    const revisor = await User.findOne({ email: assignedToEmail, role: 'revisor' });
+    const revisor = await User.findOne({ _id: assignedToId, role: 'revisor' });
     if (!revisor) {
-      return res.status(404).json({ message: 'Usuario revisor no encontrado con ese email' });
+      return res.status(404).json({ message: 'Usuario revisor no encontrado' });
     }
     
-    // 3. Crear el nuevo proceso
     const newProcess = new Process({
       title,
       description,
-      createdBy: req.user.id, // El creador soy YO (del token)
+      createdBy: req.user.id,
       assignedTo: revisor._id,
-      // Añado el primer evento al historial
       history: [{ user: req.user.id, action: 'Proceso Creado' }]
     });
 
     await newProcess.save();
     
-    // --- Lógica de Sockets y Notificaciones ---
-    
-    // 4. Obtengo la instancia de 'io' (que guardé en server.js)
     const io = req.app.get('io');
     const message = `Te han asignado un nuevo proceso: "${newProcess.title}"`;
     
-    // 5. NUEVO: Guardo la notificación en la BD
     const newNotification = new Notification({
-      user: revisor._id, // El destinatario es el revisor
+      user: revisor._id,
       message: message,
-      link: `/process/${newProcess._id}`, // Link para el frontend
+      link: `/process/${newProcess._id}`,
       type: 'process'
     });
     await newNotification.save();
     
-    // 6. Envío el evento de socket
-    // Emito el evento 'process:assigned' SOLO a la sala personal del revisor
-    // (la sala tiene el mismo nombre que su ID de usuario)
     io.to(revisor._id.toString()).emit('process:assigned', newNotification.toObject());
 
-    // 7. Devuelvo el proceso creado (con datos populados)
     const populatedProcess = await Process.findById(newProcess._id)
                                     .populate({ path: 'createdBy', select: 'name email' })
                                     .populate({ path: 'assignedTo', select: 'name email' });
@@ -152,55 +123,45 @@ router.post('/', authMiddleware, checkRole(['admin', 'supervisor']), async (req,
 });
 
 /* =========================================================
-   👤 (TODOS) Obtener listado de procesos (CON PAGINACIÓN)
-   GET /api/processes/
+   (Rutas GET /api/processes/ y GET /api/processes/:id no cambian)
+   ...
    ========================================================= */
-// Protegida por auth
+
+/* =========================================================
+   👤 (TODOS) Obtener listado de procesos (CON PAGINACIÓN)
+   ========================================================= */
 router.get('/', authMiddleware, async (req, res) => {
   try {
-    const { role, id } = req.user; // Mis datos del token
+    const { role, id } = req.user;
     
-    // Parámetros de Paginación y Filtro (Query Params)
-    // ej: /api/processes?page=1&limit=9&status=pendiente&search=reporte
     const { status, search } = req.query;
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 9;
-    const skip = (page - 1) * limit; // Cuántos documentos saltar
+    const skip = (page - 1) * limit;
 
-    // 1. Construyo la query de MongoDB
     let query = {};
 
-    // Regla de negocio:
     if (role === 'revisor') {
-      // Un revisor SOLO ve procesos asignados a él
       query.assignedTo = id;
     } else if (role === 'supervisor') {
-      // Un admin/supervisor SOLO ve procesos creados por él
       query.createdBy = id;
     }
-    // Si es 'admin', la query se queda vacía {} y ve todo
     
-    // 2. Añado filtros si existen
     if (status && status !== 'todos') {
       query.status = status;
     }
     if (search) {
-      // Búsqueda por título (insensible a mayúsculas)
       query.title = { $regex: search, $options: 'i' };
     }
 
-    // 3. Ejecuto las queries
-    // Cuento el total de documentos (para la paginación)
     const totalProcesses = await Process.countDocuments(query);
-    // Busco los procesos de la página actual
     const processes = await Process.find(query)
       .populate({ path: 'createdBy', select: 'name email' })
       .populate({ path: 'assignedTo', select: 'name email' })
-      .sort({ createdAt: -1 }) // Los más nuevos primero
+      .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit);
     
-    // 4. Devuelvo la respuesta paginada
     res.json({
       processes,
       total: totalProcesses,
@@ -217,19 +178,16 @@ router.get('/', authMiddleware, async (req, res) => {
 
 /* =========================================================
    📄 (TODOS) Obtener detalle de UN proceso
-   GET /api/processes/:id
    ========================================================= */
-// Protegida por auth
 router.get('/:id', authMiddleware, async (req, res) => {
   try {
-    const { id } = req.params; // ID del proceso
-    const { role, id: userId } = req.user; // Mis datos
+    const { id } = req.params;
+    const { role, id: userId } = req.user;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({ message: 'ID de proceso no válido' });
     }
 
-    // 1. Busco el proceso y populo los datos del creador y asignado
     const process = await Process.findById(id)
                           .populate({ path: 'createdBy', select: 'name email' })
                           .populate({ path: 'assignedTo', select: 'name email' });
@@ -238,21 +196,16 @@ router.get('/:id', authMiddleware, async (req, res) => {
       return res.status(404).json({ message: 'Proceso no encontrado' });
     }
 
-    // 2. Verifico permisos (Regla de negocio)
     const isAssignedTo = process.assignedTo._id.toString() === userId;
     const isCreatedBy = process.createdBy._id.toString() === userId;
 
     if (role === 'revisor' && !isAssignedTo) {
       return res.status(403).json({ message: 'Acceso denegado: No eres el revisor' });
     }
-    // REGLA MEJORADA: Un 'admin' puede ver todo.
-    // Un 'supervisor' solo puede ver los que él creó.
     if (role === 'supervisor' && !isCreatedBy) {
-       // Si soy supervisor y no lo cree yo
        return res.status(403).json({ message: 'Acceso denegado: No eres el creador de este proceso' });
     }
 
-    // 3. Si paso los permisos, devuelvo el proceso
     res.json(process);
 
   } catch (err) {
@@ -264,36 +217,30 @@ router.get('/:id', authMiddleware, async (req, res) => {
 
 /* =========================================================
    (TODOS) Obtener incidencias de UN proceso
-   GET /api/processes/:id/incidents
    ========================================================= */
-// Protegida por auth
 router.get('/:id/incidents', authMiddleware, async (req, res) => {
   try {
     const { id: processId } = req.params;
     const { role, id: userId } = req.user;
 
-    // 1. Verifico que el proceso exista
     const process = await Process.findById(processId);
     if (!process) {
       return res.status(404).json({ message: 'Proceso no encontrado' });
     }
     
-    // 2. Verifico permisos (la misma lógica que para ver el detalle del proceso)
     const isAssignedTo = process.assignedTo.toString() === userId;
     const isCreatedBy = process.createdBy.toString() === userId;
 
     if (role === 'revisor' && !isAssignedTo) {
       return res.status(403).json({ message: 'Acceso denegado' });
     }
-    // REGLA MEJORADA: Un 'admin' puede ver todo.
     if (role === 'supervisor' && !isCreatedBy) {
        return res.status(403).json({ message: 'Acceso denegado' });
     }
     
-    // 3. Busco las incidencias de ESE proceso
     const incidents = await Incident.find({ processId: processId })
                               .populate({ path: 'reportedBy', select: 'name email' })
-                              .sort({ createdAt: 'desc' }); // Las más nuevas primero
+                              .sort({ createdAt: 'desc' });
     
     res.json(incidents);
 
@@ -304,22 +251,23 @@ router.get('/:id/incidents', authMiddleware, async (req, res) => {
 });
 
 
-// --- ¡NUEVA MEJORA! Middleware para manejar errores de Multer ---
-// Este es un middleware personalizado que envuelve a 'upload' (de multer)
-// para atrapar errores de tamaño o tipo de archivo antes de que lleguen a mi lógica.
+// Middleware para manejar errores de Multer
 const handleUpload = (req, res, next) => {
   upload(req, res, (err) => {
     if (err instanceof multer.MulterError) {
-      // Error de Multer (ej. tamaño de archivo)
       if (err.code === 'LIMIT_FILE_SIZE') {
         return res.status(400).json({ message: 'Error: El archivo es demasiado grande (Máx. 5MB).' });
       }
+      // --- ¡INICIO DE CAMBIO! ---
+      // Capturamos el error si se envían demasiados archivos (ahora que no hay límite, esto no debería pasar)
+      if (err.code === 'LIMIT_FILE_COUNT') {
+        return res.status(400).json({ message: 'Error: Se superó el límite de archivos.' });
+      }
+      // --- ¡FIN DE CAMBIO! ---
       return res.status(400).json({ message: `Error de Multer: ${err.message}` });
     } else if (err) {
-      // Otro error (ej. tipo de archivo no permitido del fileFilter O el ENOENT)
       return res.status(400).json({ message: err.message });
     }
-    // Si todo está bien, pasa al siguiente handler (la lógica de la ruta)
     next();
   });
 };
@@ -327,24 +275,16 @@ const handleUpload = (req, res, next) => {
 
 /* =========================================================
    (REVISOR) Reportar una incidencia para un proceso
-   POST /api/processes/:id/incidents
    ========================================================= */
-// Esta ruta es compleja:
-// 1. Protegida por auth (solo revisor)
-// 2. Usa 'handleUpload' para procesar los archivos (form-data)
-// 3. Guarda la incidencia
-// 4. Emite un socket al supervisor
 router.post(
   '/:id/incidents', 
-  authMiddleware, // 1. Verifica token
-  checkRole(['revisor']), // 2. Verifica rol (MEJORA: el código original no tenía esto, pero debería)
-  handleUpload, // 3. Procesa archivos (y atrapa errores de Multer)
+  authMiddleware,
+  checkRole(['revisor']),
+  handleUpload, 
   async (req, res) => {
     try {
-      // 4. Obtengo datos del body (form-data)
       const { description, severity, evidenceText, evidenceLink } = req.body;
       
-      // 5. Validaciones manuales
       if (!description || description.length < 10) {
         return res.status(400).json({ message: 'La descripción debe tener al menos 10 caracteres' });
       }
@@ -354,17 +294,14 @@ router.post(
 
       const processId = req.params.id;
       
-      // 6. Verifico que el proceso exista Y esté asignado a MÍ
       const process = await Process.findOne({ _id: processId, assignedTo: req.user.id });
       if (!process) {
         return res.status(404).json({ message: 'Proceso no encontrado o no asignado a este usuario' });
       }
-      // (Doble check de rol, aunque checkRole ya lo haría)
       if (req.user.role !== 'revisor') {
         return res.status(403).json({ message: 'Solo el revisor asignado puede reportar incidencias' });
       }
 
-      // 7. Construyo el array de 'evidence'
       const evidencePayload = [];
       if (evidenceText) {
         evidencePayload.push({ type: 'texto', content: evidenceText });
@@ -372,18 +309,16 @@ router.post(
       if (evidenceLink) {
         evidencePayload.push({ type: 'enlace', content: evidenceLink, url: evidenceLink });
       }
-      // 'req.files' es poblado por Multer (handleUpload)
       if (req.files && req.files.length > 0) {
         req.files.forEach(file => {
           evidencePayload.push({
-            type: 'archivo', // Tipo 'archivo'
-            content: file.originalname, // Guardo el nombre original
-            url: `/uploads/${file.filename}` // Guardo la ruta donde se sirvió
+            type: 'archivo',
+            content: file.originalname,
+            url: `/uploads/${file.filename}`
           });
         });
       }
 
-      // 8. Creo la nueva incidencia
       const newIncident = new Incident({
         processId,
         reportedBy: req.user.id,
@@ -394,8 +329,6 @@ router.post(
       
       await newIncident.save();
       
-      // 9. Lógica de negocio: Si es la primera incidencia,
-      //    cambio el estado del Proceso a 'en_revision'.
       let processUpdated = false;
       if (process.status === 'pendiente') {
         process.status = 'en_revision';
@@ -404,39 +337,25 @@ router.post(
         processUpdated = true;
       }
       
-      // 10. --- Lógica de Sockets y Notificaciones ---
       const io = req.app.get('io');
       const populatedIncident = await Incident.findById(newIncident._id)
                                       .populate({ path: 'reportedBy', select: 'name email' });
       
       const message = `${req.user.name} reportó una incidencia ${severity} en "${process.title}"`;
 
-      // 11. NUEVO: Guardo notificación en BD
       const newNotification = new Notification({
-        user: process.createdBy, // Notificación para el CREADOR del proceso
+        user: process.createdBy,
         message: message,
         link: `/process/${process._id}`,
         type: 'incident'
-        // 'severity' no se guardó aquí, pero podría añadirse al modelo Notification
       });
       await newNotification.save();
 
-      // 12. Emito el evento al supervisor/creador
       io.to(process.createdBy.toString()).emit('incident:created', newNotification.toObject());
       
-      // 13. Si el estado del proceso cambió, emito OTRO evento
-      //     para actualizar el dashboard de todos (ej. el admin)
-      if (processUpdated) {
-        // (Este 'io.emit' global no estaba en el código, pero sería una buena práctica)
-        // io.emit('process:status_updated', ...);
-      }
-
-      // 14. Devuelvo la incidencia creada
       res.status(201).json(populatedIncident);
     } catch (err) {
       console.error('Error en POST /api/processes/:id/incidents:', err);
-      // ¡Aquí estaba el error! El 'err.message' es el ENOENT.
-      // Lo cambiamos por un mensaje genérico para que el 'errorHandler' no lo tome
       res.status(500).json({ message: 'Error interno del servidor al guardar la incidencia' });
     }
   }
@@ -444,58 +363,44 @@ router.post(
 
 /* =========================================================
    (SUPERVISOR/ADMIN) Aprobar/Rechazar un proceso
-   PUT /api/processes/:id/status
    ========================================================= */
-// Protegido por auth y rol
 router.put('/:id/status', authMiddleware, checkRole(['supervisor', 'admin']), async (req, res) => {
     try {
         const { status } = req.body;
-        // 1. Valido que el estado sea uno de los finales
         if (!['aprobado', 'rechazado'].includes(status)) {
             return res.status(400).json({ message: 'Estado no válido' });
         }
 
         const processId = req.params.id;
         
-        // 2. Busco el proceso Y me aseguro que yo sea el creador
-        const process = await Process.findOne({ _id: processId, createdBy: req.user.id });
+        let process;
+        if (req.user.role === 'admin') {
+          process = await Process.findById(processId);
+        } else {
+          process = await Process.findOne({ _id: processId, createdBy: req.user.id });
+        }
+
         if (!process) {
-            // Si no lo encontré, reviso si soy admin (los admin pueden aprobar/rechazar todo)
-            if (req.user.role === 'admin') {
-              const adminProcess = await Process.findById(processId);
-              if (!adminProcess) {
-                return res.status(404).json({ message: 'Proceso no encontrado' });
-              }
-              // Si soy admin y existe, lo uso
-              process = adminProcess;
-            } else {
-              // Si soy supervisor y no es mío, bloqueo
-              return res.status(404).json({ message: 'Proceso no encontrado o usted no es el creador' });
-            }
+            return res.status(404).json({ message: 'Proceso no encontrado o usted no tiene permisos' });
         }
         
-        // 3. Actualizo el estado y el historial
         process.status = status;
         process.history.push({ user: req.user.id, action: `Proceso ${status}` });
         await process.save();
         
-        // 4. --- Lógica de Sockets y Notificaciones ---
         const io = req.app.get('io');
         const message = `El proceso "${process.title}" ha sido ${status}`;
         
-        // 5. NUEVO: Guardo notificación en BD
         const newNotification = new Notification({
-          user: process.assignedTo, // Notificación para el REVISOR asignado
+          user: process.assignedTo, 
           message: message,
           link: `/process/${process._id}`,
           type: 'process'
         });
         await newNotification.save();
         
-        // 6. Emito el evento al revisor
         io.to(process.assignedTo.toString()).emit('process:status_updated', newNotification.toObject());
 
-        // 7. Devuelvo el proceso actualizado y populado
         const populatedProcess = await Process.findById(process._id)
                                     .populate({ path: 'createdBy', select: 'name email' })
                                     .populate({ path: 'assignedTo', select: 'name email' });

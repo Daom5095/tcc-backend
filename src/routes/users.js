@@ -1,21 +1,17 @@
 /*
  * Rutas de Usuarios (/api/users).
- * --- ¡MODIFICADO CON RUTAS DE ADMIN (FASE 3 - PASO 9)! ---
- * Responsabilidades:
- * 1. Obtener lista de usuarios (para el chat).
- * 2. Rutas para que el usuario gestione SU perfil (nombre, contraseña).
- * 3. Rutas de Administrador para gestionar OTROS usuarios (rol, estado).
+ * --- ¡MODIFICADO CON FILTRO DE ROL (MEJORA)! ---
  */
 const express = require('express');
 const router = express.Router();
 const authMiddleware = require('../middlewares/auth');
-const checkRole = require('../middlewares/checkRole'); // Importo checkRole
+const checkRole = require('../middlewares/checkRole'); 
 const User = require('../models/User');
 const Joi = require('joi');
 const bcrypt = require('bcrypt');
 
 /* =========================================================
-   👥 OBTENER LISTA DE USUARIOS (Para Chat)
+   👥 OBTENER LISTA DE USUARIOS (Para Chat y Asignar Procesos)
    GET /api/users/
    ========================================================= */
 // Protegida por auth (debes estar logueado para ver otros usuarios)
@@ -23,9 +19,21 @@ router.get('/', authMiddleware, async (req, res) => {
   try {
     const myId = req.user.id; // Mi ID (del token)
     
+    // --- ¡INICIO DE CAMBIO! ---
+    // Creamos una query base
+    const query = {
+      _id: { $ne: myId }, // Excluirme a mí mismo
+      isActive: true      // Solo usuarios activos
+    };
+
+    // Si el frontend envía ?role=revisor, filtramos por rol
+    if (req.query.role) {
+      query.role = req.query.role;
+    }
+    // --- ¡FIN DE CAMBIO! ---
+
     // Devuelve solo usuarios ACTIVOS que no sean yo
-    // ($ne: 'not equal', no incluirme a mí mismo)
-    const users = await User.find({ _id: { $ne: myId }, isActive: true })
+    const users = await User.find(query)
                             .select('name email role'); // Solo devuelvo estos campos
     
     res.json(users);
