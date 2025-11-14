@@ -2,13 +2,12 @@
  * Rutas de Notificaciones (/api/notifications).
  * Permite al usuario logueado obtener su historial de notificaciones
  * y marcar notificaciones como leídas.
- * --- ¡MODIFICADO CON DELETE (BUG FIX)! ---
  */
 const express = require('express');
 const router = express.Router();
-const mongoose = require('mongoose'); // <-- Asegúrate de que mongoose esté importado
+const mongoose = require('mongoose'); 
 const authMiddleware = require('../middlewares/auth'); // Protegido por auth
-const Notification = require('../models/Notification'); // Modelo Notification
+const Notification = require('../models/Notification'); 
 
 /* =========================================================
    OBTENER MIS NOTIFICACIONES
@@ -87,7 +86,7 @@ router.delete('/:id', authMiddleware, async (req, res) => {
     res.status(500).json({ message: 'Error interno del servidor' });
   }
 });
-// --- ¡FIN DE CÓDIGO NUEVO! ---
+
 
 
 module.exports = router;

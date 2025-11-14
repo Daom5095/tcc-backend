@@ -1,6 +1,6 @@
 /*
  * Modelo de datos para la Incidencia (Incident).
- * Representa un reporte (ej. un problema, una observación) que un 'revisor'
+ * Representa un reporte 
  * crea y asocia a un 'Proceso' específico.
  * Define la estructura de la colección 'incidents'.
  */
@@ -60,5 +60,4 @@ const incidentSchema = new Schema({
   }
 }, { timestamps: true });
 
-// Exporto el modelo 'Incident'
 module.exports = mongoose.model('Incident', incidentSchema);

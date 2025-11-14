@@ -11,10 +11,10 @@
 // 1. Carga las variables de entorno (PORT, MONGO_URI, JWT_SECRET) desde .env
 require('dotenv').config(); 
 const http = require('http');
-const { Server } = require('socket.io'); // Importo el constructor de Socket.io
+const { Server } = require('socket.io'); 
 const mongoose = require('mongoose');
-const app = require('./app'); // Importo MI aplicación Express desde app.js
-const { initSockets } = require('./sockets'); // Importo mi lógica de Sockets
+const app = require('./app'); 
+const { initSockets } = require('./sockets'); 
 
 // 2. Defino el puerto desde el .env o uso 4000 por defecto
 const PORT = process.env.PORT || 4000;
@@ -27,7 +27,6 @@ const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
     // Configuro CORS para Socket.io, permitiendo cualquier origen
-    // (Idealmente en producción se restringe al dominio del frontend)
     origin: '*',
     methods: ['GET', 'POST'],
     credentials: true
@@ -36,8 +35,6 @@ const io = new Server(server, {
 
 
 // Hago que 'io' sea accesible globalmente en la app de Express.
-// Esto es CRUCIAL para poder emitir eventos desde las rutas (ej. /api/processes)
-// usando req.app.get('io')
 app.set('io', io); 
 
 // Le paso la instancia de 'io' a mi módulo de sockets (sockets/index.js)
@@ -74,5 +71,4 @@ async function start() {
   }
 }
 
-// Ejecuto la función de arranque
 start();

@@ -1,14 +1,12 @@
 /*
  * Módulo de Sockets (sockets/index.js).
- * --- ¡MODIFICADO CON "IS TYPING" (FASE 2 - PASO 2)! ---
- * --- ¡MODIFICADO CON NOTIFICACIONES INTELIGENTES (MEJORA)! ---
  *
  * Este archivo centraliza TODA la lógica de Socket.io.
  * Es llamado por 'server.js' y recibe la instancia 'io'.
  */
 const Conversation = require('../models/Conversation');
 const Message = require('../models/Message');
-const Notification = require('../models/Notification'); // Para notificaciones de chat
+const Notification = require('../models/Notification'); 
 const jwt = require('jsonwebtoken');
 const JWT_SECRET = process.env.JWT_SECRET || 'secret_dev';
 
@@ -63,7 +61,6 @@ async function initSockets(io) {
     // 1. Sala Personal (para notificaciones)
     // Hago que el usuario se una a una sala con su propio ID.
     // Esto me permite enviarle notificaciones PUSH solo a él.
-    // (ej. io.to(userId).emit('notificacion_privada', ...))
     socket.join(user.id); 
     console.log(`Usuario ${user.name} unido a su sala personal: ${user.id}`);
    
@@ -85,7 +82,7 @@ async function initSockets(io) {
           .lean(); // .lean() para que sea más rápido (solo JSON)
         
         // Emito el historial SOLO a este socket (el que lo pidió)
-        socket.emit('chat:general_history', messages.reverse()); // .reverse() para pintarlos bien
+        socket.emit('chat:general_history', messages.reverse()); 
       } catch (err) {
          console.error('Error al enviar historial de chat:', err);
       }
@@ -95,7 +92,7 @@ async function initSockets(io) {
     socket.on('chat:send_general', async (payload) => {
       try {
         const { content } = payload || {};
-        if (!content || !content.trim()) return; // No guardar mensajes vacíos
+        if (!content || !content.trim()) return; 
 
         const conv = await getPublicConversation();
         
@@ -103,7 +100,7 @@ async function initSockets(io) {
         const message = new Message({
           conversationId: conv._id,
           senderId: user.id,
-          senderName: user.name, // Denormalizado para velocidad
+          senderName: user.name, 
           content: content.trim(),
         });
         await message.save();
@@ -148,7 +145,7 @@ async function initSockets(io) {
 
     // --- LÓGICA DE CHAT PRIVADO ---
     
-    // Evento: El cliente avisa que entró a un chat privado (ej. /chat/12345)
+    // Evento: El cliente avisa que entró a un chat privado 
     socket.on('join_room', (roomId) => {
       // Lo uno a la sala de esa conversación (que es el ID de la Conversation)
       socket.join(roomId);
@@ -192,7 +189,6 @@ async function initSockets(io) {
 
         
         // 4. --- Lógica de Notificación Inteligente ---
-        //    (Esta es la mejora clave)
         //    Recorro los participantes de la conversación
         conv.participants.forEach(async (participantId) => {
           
@@ -215,7 +211,7 @@ async function initSockets(io) {
               const newNotification = new Notification({
                 user: participantId,
                 message: messageForNotif,
-                link: `/chat/${roomId}`, // Link para el frontend
+                link: `/chat/${roomId}`, 
                 type: 'chat'
               });
               await newNotification.save();
@@ -245,14 +241,14 @@ async function initSockets(io) {
         name: user.name
       });
     });
-    // --- Fin de "Escribiendo" Privado ---
+  
 
-    // (Manejador de desconexión - sin cambios)
+
     socket.on('disconnect', () => {
       console.log('Socket desconectado:', socket.id);
     });
   });
 }
 
-// Exporto la función principal
+
 module.exports = { initSockets };

@@ -3,10 +3,6 @@
  * Es un "Factory Function": una función que devuelve el middleware real.
  * Esto me permite reutilizarlo pasando diferentes roles.
  *
- * EJEMPLO DE USO en una ruta:
- * router.get('/admin', authMiddleware, checkRole(['admin']), (req, res) => { ... });
- * router.post('/proceso', authMiddleware, checkRole(['admin', 'supervisor']), (req, res) => { ... });
- *
  * @param {Array<String>} allowedRoles - Array de roles permitidos (ej. ['admin', 'supervisor'])
  */
 const checkRole = (allowedRoles) => {

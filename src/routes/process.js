@@ -1,6 +1,5 @@
 /*
  * Rutas de Procesos (/api/processes).
- * --- ¡MODIFICADO PARA QUITAR LÍMITE DE ARCHIVOS (MEJORA)! ---
  */
 const express = require('express');
 const Joi = require('joi');
@@ -66,10 +65,8 @@ const upload = multer({
     fileSize: 1024 * 1024 * 5 // Mantenemos el límite de 5MB *por archivo*
   },
   fileFilter: fileFilter
-  // --- ¡INICIO DE CAMBIO! ---
-  // Quitamos el número 5 de .array() para permitir archivos ilimitados
+  // permitir archivos ilimitados
 }).array('evidenceFiles'); 
-// --- ¡FIN DE CAMBIO! ---
 
 
 /* =========================================================
@@ -258,12 +255,10 @@ const handleUpload = (req, res, next) => {
       if (err.code === 'LIMIT_FILE_SIZE') {
         return res.status(400).json({ message: 'Error: El archivo es demasiado grande (Máx. 5MB).' });
       }
-      // --- ¡INICIO DE CAMBIO! ---
       // Capturamos el error si se envían demasiados archivos (ahora que no hay límite, esto no debería pasar)
       if (err.code === 'LIMIT_FILE_COUNT') {
         return res.status(400).json({ message: 'Error: Se superó el límite de archivos.' });
       }
-      // --- ¡FIN DE CAMBIO! ---
       return res.status(400).json({ message: `Error de Multer: ${err.message}` });
     } else if (err) {
       return res.status(400).json({ message: err.message });

@@ -1,6 +1,5 @@
 /*
  * Modelo de datos para el Usuario (User).
- * --- ¡MODIFICADO CON "isActive" (FASE 3 - PASO 9)! ---
  * * Este schema define la estructura de un usuario en la colección 'users'.
  * Es la entidad base para la autenticación y los roles.
  */

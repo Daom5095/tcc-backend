@@ -6,8 +6,8 @@
 const mongoose = require('mongoose');
 const { Schema } = mongoose;
 
-// (Definí este sub-esquema pero al final no lo usé,
-// preferí manejar adjuntos en las 'Incidencias' y no en el chat)
+
+
 const attachmentSchema = new Schema({
   url: String, // URL del archivo
   type: String, // 'imagen', 'pdf', etc.
@@ -42,5 +42,5 @@ const messageSchema = new Schema({
   attachments: [attachmentSchema],
 }, { timestamps: true });
 
-// Exporto el modelo 'Message'
+
 module.exports = mongoose.model('Message', messageSchema);

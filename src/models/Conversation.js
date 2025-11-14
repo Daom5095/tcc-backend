@@ -26,5 +26,5 @@ const conversationSchema = new Schema({
   lastMessageAt: Date, 
 }, { timestamps: true });
 
-// Exporto el modelo 'Conversation'
+
 module.exports = mongoose.model('Conversation', conversationSchema);

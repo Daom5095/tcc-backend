@@ -19,7 +19,6 @@ const reportRoutes = require('./routes/reports');
 const userRoutes = require('./routes/users');
 const notificationRoutes = require('./routes/notificationRoutes');
 
-// Inicializo la aplicación Express
 const app = express();
 
 
@@ -67,9 +66,6 @@ app.get('/health', (req, res) => {
 });
 
 // 7. Middleware de Manejo de Errores.
-// Debe ser el ÚLTIMO 'app.use()'. Si algo falla en las rutas anteriores
-// y se llama a 'next(err)', este middleware lo atrapará.
 app.use(errorHandler);
 
-// Exporto la 'app' para que server.js pueda usarla
 module.exports = app;

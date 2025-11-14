@@ -41,5 +41,4 @@ const notificationSchema = new Schema({
 
 }, { timestamps: true }); // 'createdAt' es clave para ordenarlas
 
-// Exporto el modelo 'Notification'
 module.exports = mongoose.model('Notification', notificationSchema);

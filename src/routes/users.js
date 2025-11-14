@@ -1,6 +1,5 @@
 /*
  * Rutas de Usuarios (/api/users).
- * --- ¡MODIFICADO CON FILTRO DE ROL (MEJORA)! ---
  */
 const express = require('express');
 const router = express.Router();
@@ -19,7 +18,6 @@ router.get('/', authMiddleware, async (req, res) => {
   try {
     const myId = req.user.id; // Mi ID (del token)
     
-    // --- ¡INICIO DE CAMBIO! ---
     // Creamos una query base
     const query = {
       _id: { $ne: myId }, // Excluirme a mí mismo
@@ -30,7 +28,6 @@ router.get('/', authMiddleware, async (req, res) => {
     if (req.query.role) {
       query.role = req.query.role;
     }
-    // --- ¡FIN DE CAMBIO! ---
 
     // Devuelve solo usuarios ACTIVOS que no sean yo
     const users = await User.find(query)
